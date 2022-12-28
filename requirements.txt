@@ -1,0 +1,6 @@
+packaging
+six
+ydb
+ydb[yc]
+pyTelegramBotAPI
+python-dotenv
