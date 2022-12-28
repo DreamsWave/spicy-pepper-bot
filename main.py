@@ -14,7 +14,7 @@ load_dotenv()
 logger = telebot.logger
 telebot.logger.setLevel(logging.INFO)
 
-bot = telebot.TeleBot(os.getenv('TELEGRAM_TOKEN'), threaded=False)
+bot = telebot.TeleBot(os.getenv('TELEGRAM_TOKEN'), threaded=False, parse_mode="HTML")
 
 global_pepper = dict()
 
@@ -46,7 +46,7 @@ def handler(event, context):
     }
 
 ### Telegram commands
-# '/pepper'
+# /pepper
 @bot.message_handler(commands=['pepper'])
 def send_pepper(message):
     print('pepper command')
@@ -61,10 +61,10 @@ def send_pepper(message):
             new_size = pepper.size + grow_by
             update_pepper_size(pepper_id=pepper.pepper_id, size=new_size)
             print("Pepper updated by {0}. It's {1} now".format(grow_by, new_size))
-            bot.reply_to(message,("Pepper updated by {0}. It's {1} now".format(grow_by, new_size)))
+            send_message(message, "Pepper updated by {0}. It's {1} now".format(grow_by, new_size))
         else:
             print("Pepper already updated today. It's {0}".format(pepper.size))
-            bot.reply_to(message,("Pepper has already updated today. It's {0}".format(pepper.size)))
+            send_message(message, "Pepper has already updated today. It's {0}".format(pepper.size))
     else:
         print('No pepper found')
         grow_by = grow_pepper()
@@ -75,12 +75,28 @@ def send_pepper(message):
             size=grow_by
         )
         print("Pepper created. It's {0} now".format(grow_by))
-        bot.reply_to(message,("Pepper created. It's {0} now".format(grow_by)))
+        send_message(message, "Pepper created. It's {0} now".format(grow_by))
 
-# '/top_pepper'
-@bot.message_handler(commands=['top_pepper'])
-def send_top_pepper(message):
-    print('top_pepper command')
+# /top_peppers
+@bot.message_handler(commands=['top_peppers'])
+def send_top_peppers(message):
+    print('top_peppers command')
+    top_peppers = get_top_peppers(chat_id = message.chat.id)
+    print(top_peppers)
+    if top_peppers:
+        print('Peppers found')
+        text = "Top 10 peppers:\n"
+        for index, pepper in enumerate(top_peppers, start=1):
+            text += "\n{0}| <b>{1}</b> — <b>{2}</b> cm".format(index, message.from_user.first_name, pepper.size)
+        send_message(message, text)
+    else:
+        print('No peppers found')
+        send_message(message, "No peppers found")
+    
+# /pepper_of_the_day
+@bot.message_handler(commands=['pepper_of_the_day'])
+def send_pepper_of_the_day(message):
+    print('pepper_of_the_day command')
 
 
 # Yandex Database Operations
@@ -131,29 +147,51 @@ def update_pepper_size(pepper_id, size):
         )
     return pool.retry_operation_sync(callee)
 
-# def get_random_pepper(chat_id):
-#     def callee(session):
-#         result_sets = session.transaction().execute(
-#             """
-#             SELECT * 
-#             FROM `peppers` 
-#             WHERE chat_id == {} 
-#             ORDER BY RANDOM(pepper_id) 
-#             LIMIT 1
-#             """.format(chat_id),
-#             commit_tx=True,
-#             settings=ydb.BaseRequestSettings().with_timeout(3).with_operation_timeout(2)
-#         )
-#         if result_sets[0].rows:
-#             return result_sets[0].rows[0]
-#         else:
-#             return False
+def get_random_pepper(chat_id):
+    def callee(session):
+        result_sets = session.transaction().execute(
+            """
+            SELECT * 
+            FROM `peppers` 
+            WHERE chat_id == {} 
+            ORDER BY RANDOM(pepper_id) 
+            LIMIT 1
+            """.format(chat_id),
+            commit_tx=True,
+            settings=ydb.BaseRequestSettings().with_timeout(3).with_operation_timeout(2)
+        )
+        if result_sets[0].rows:
+            return result_sets[0].rows[0]
+        else:
+            return False
 
-#     return pool.retry_operation_sync(callee)
+    return pool.retry_operation_sync(callee)
+
+def get_top_peppers(chat_id):
+    def callee(session):
+        result_sets = session.transaction().execute(
+            """
+            SELECT *
+            FROM `peppers`
+            WHERE chat_id == {}
+            ORDER BY size DESC
+            LIMIT 10
+            """.format(chat_id),
+            commit_tx=True,
+            settings=ydb.BaseRequestSettings().with_timeout(3).with_operation_timeout(2)
+        )
+        if result_sets[0].rows:
+            return result_sets[0].rows
+        else:
+            return False
+
+    return pool.retry_operation_sync(callee)
 
 # Utils
 def grow_pepper():
     return randrange(-3, 20)
+def send_message(message, text):
+    bot.send_message(chat_id=message.chat.id, text=text, parse_mode="HTML")
 
 
 
