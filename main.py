@@ -16,8 +16,6 @@ telebot.logger.setLevel(logging.INFO)
 
 bot = telebot.TeleBot(os.getenv('TELEGRAM_TOKEN'), threaded=False, parse_mode="HTML")
 
-global_pepper = dict()
-
 # create driver in global space.
 driver = ydb.Driver(
         endpoint = os.getenv("YDB_ENDPOINT"), 
@@ -32,13 +30,7 @@ pool = ydb.SessionPool(driver)
 def handler(event, context):
     request_body_dict = json.loads(event['body'])
     if 'message' not in request_body_dict: return
-
-    global global_pepper
-    global_pepper["chat_id"] = request_body_dict['message']['chat']['id']
-    global_pepper["user_id"] = request_body_dict['message']['from']['id']
-    global_pepper["username"] = request_body_dict['message']['from']['username']
-    # print(chat_id, user_id, username)
-
+    
     update = telebot.types.Update.de_json(request_body_dict)
     bot.process_new_updates([update])
     return {
@@ -50,7 +42,7 @@ def handler(event, context):
 @bot.message_handler(commands=['pepper'])
 def send_pepper(message):
     print('pepper command')
-    pepper = get_pepper(chat_id=global_pepper["chat_id"], user_id=global_pepper["user_id"])
+    pepper = get_pepper(chat_id=message.chat.id, user_id=message.from_user.id)
     if pepper:
         print(pepper)
         now = datetime.now()
@@ -69,9 +61,9 @@ def send_pepper(message):
         print('No pepper found')
         grow_by = grow_pepper()
         create_pepper(
-            chat_id=global_pepper['chat_id'], 
-            user_id=global_pepper['user_id'],
-            username=global_pepper['username'],
+            chat_id=message.chat.id, 
+            user_id=message.from_user.id,
+            username=message.from_user.username,
             size=grow_by
         )
         print("Pepper created. It's {0} now".format(grow_by))
@@ -87,7 +79,7 @@ def send_top_peppers(message):
         print('Peppers found')
         text = "Top 10 peppers:\n"
         for index, pepper in enumerate(top_peppers, start=1):
-            text += "\n{0}| <b>{1}</b> — <b>{2}</b> cm".format(index, message.from_user.first_name, pepper.size)
+            text += "\n{0}| <b>{1}</b> — <b>{2}</b> cm".format(index, pepper.username, pepper.size)
         send_message(message, text)
     else:
         print('No peppers found')
@@ -97,6 +89,37 @@ def send_top_peppers(message):
 @bot.message_handler(commands=['pepper_of_the_day'])
 def send_pepper_of_the_day(message):
     print('pepper_of_the_day command')
+    pepper_of_the_day = get_pepper_of_the_day(message.chat.id)
+
+    if pepper_of_the_day:
+        # if found pepper_of_the_day in table
+        print(pepper_of_the_day)
+        now = datetime.now()
+        start_of_day = datetime.timestamp(datetime(now.year,now.month,now.day))
+        if pepper_of_the_day.last_updated < start_of_day:
+            # if pepper_of_the_day hasn't updated yet
+            random_pepper = get_random_pepper(message.chat.id)
+            update_pepper_of_the_day(message.chat.id, random_pepper.user_id)
+            send_message(message, "New top pepper is {0}".format(random_pepper.username))
+        else:
+            # if pepper already updated today
+            current_pepper_of_the_day = get_pepper(message.chat.id, pepper_of_the_day.user_id)
+            if current_pepper_of_the_day:
+                 # if got current_pepper_of_the_day
+                send_message(message, "Top pepper has already updated today. It's <b>{0}</b>".format(current_pepper_of_the_day.username))
+            else:
+                # if no current_pepper_of_the_day found
+                send_message(message, "No peppers in this chat")
+    else:
+        # if no pepper_of_the_day found in table
+        random_pepper = get_random_pepper(message.chat.id)
+        if random_pepper:
+            # if got random pepper
+            create_pepper_of_the_day(message.chat.id, random_pepper.user_id)
+            send_message(message, "Top pepper of the day is {}".format(random_pepper.username))
+        else:
+            # if no pepper found
+            send_message(message, "No peppers in this chat")
 
 
 # Yandex Database Operations
@@ -185,6 +208,51 @@ def get_top_peppers(chat_id):
         else:
             return False
 
+    return pool.retry_operation_sync(callee)
+
+def get_pepper_of_the_day(chat_id):
+    def callee(session):
+        result_sets = session.transaction().execute(
+            """
+            SELECT *
+            FROM peppers_of_the_day
+            WHERE chat_id = {0};
+            """.format(chat_id),
+            commit_tx=True,
+            settings=ydb.BaseRequestSettings().with_timeout(3).with_operation_timeout(2)
+        )
+        if result_sets[0].rows:
+            return result_sets[0].rows[0]
+        else:
+            return False
+
+    return pool.retry_operation_sync(callee)
+
+def create_pepper_of_the_day(chat_id, user_id):
+    last_updated = int(datetime.timestamp(datetime.now()))
+    def callee(session):
+        session.transaction().execute(
+            """
+            UPSERT INTO `peppers_of_the_day` (chat_id, user_id, last_updated) 
+            VALUES ({0}, {1}, {2});
+            """.format(chat_id, user_id, last_updated),
+            commit_tx=True,
+            settings=ydb.BaseRequestSettings().with_timeout(3).with_operation_timeout(2)
+        )
+    return pool.retry_operation_sync(callee)
+
+def update_pepper_of_the_day(chat_id, user_id):
+    last_updated = int(datetime.timestamp(datetime.now()))
+    def callee(session):
+        session.transaction().execute(
+            """
+            UPDATE `peppers_of_the_day`
+            SET user_id = {0}, last_updated = {1}
+            WHERE chat_id = "{2}";
+            """.format(user_id, last_updated, chat_id),
+            commit_tx=True,
+            settings=ydb.BaseRequestSettings().with_timeout(3).with_operation_timeout(2)
+        )
     return pool.retry_operation_sync(callee)
 
 # Utils
