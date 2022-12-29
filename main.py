@@ -49,9 +49,9 @@ def send_pepper(message):
             grow_by = grow_pepper()
             new_size = pepper.size + grow_by
             update_pepper_size(pepper_id=pepper.pepper_id, size=new_size)
-            send_message(message, "Pepper updated by {0}. It's {1} now".format(grow_by, new_size), disable_notification=False)
+            send_message(message, "Pepper updated by <b>{0}</b>. It's <b>{1} cm</b> now".format(grow_by, new_size), disable_notification=False)
         else:
-            send_message(message, "Pepper has already updated today. It's {0}".format(pepper.size))
+            send_message(message, "Pepper has already updated today. It's <b>{0} cm</b>".format(pepper.size))
     else:
         grow_by = grow_pepper()
         create_pepper(
@@ -60,7 +60,7 @@ def send_pepper(message):
             username=message.from_user.username,
             size=grow_by
         )
-        send_message(message, "Pepper created. It's {0} now".format(grow_by))
+        send_message(message, "Pepper created. It's <b>{0} cm</b> now".format(grow_by))
 
 # /top_peppers
 @bot.message_handler(commands=['top_peppers'])
@@ -69,7 +69,7 @@ def send_top_peppers(message):
     if top_peppers:
         text = "Top 10 peppers:\n"
         for index, pepper in enumerate(top_peppers, start=1):
-            text += "\n{0}| <b>{1}</b> — <b>{2}</b> cm".format(index, pepper.username, pepper.size)
+            text += "\n{0}| <b>{1}</b> — <b>{2} cm</b>".format(index, pepper.username, pepper.size)
         send_message(message, text)
     else:
         send_message(message, "No peppers found")
@@ -93,17 +93,17 @@ def send_pepper_of_the_day(message):
             current_pepper_of_the_day = get_pepper(message.chat.id, pepper_of_the_day.user_id)
             if current_pepper_of_the_day:
                  # if got current_pepper_of_the_day
-                send_message(message, "Top pepper has already updated today. It's {0}".format(current_pepper_of_the_day.username))
+                send_message(message, "Top pepper has already updated today. It's <b>{0}</b>".format(current_pepper_of_the_day.username))
             else:
                 # if no current_pepper_of_the_day found
-                send_message(message, "No peppers in this chat")
+                send_message(message, "No pepper found in this chat")
     else:
         # if no pepper_of_the_day found in table
         random_pepper = get_random_pepper(message.chat.id)
         if random_pepper:
             # if got random pepper
             create_pepper_of_the_day(message.chat.id, random_pepper.user_id)
-            send_message(message, "Top pepper of the day is {}".format(random_pepper.username))
+            send_message(message, "Top pepper of the day is <b>{}</b>".format(random_pepper.username))
         else:
             # if no pepper found
             send_message(message, "No peppers in this chat")
