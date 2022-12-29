@@ -9,24 +9,22 @@ from random import randrange
 import uuid
 from dotenv import load_dotenv
 
+# init
 load_dotenv()
-
 logger = telebot.logger
 telebot.logger.setLevel(logging.INFO)
-
 bot = telebot.TeleBot(os.getenv('TELEGRAM_TOKEN'), threaded=False, parse_mode="HTML")
-
-# create driver in global space.
 driver = ydb.Driver(
         endpoint = os.getenv("YDB_ENDPOINT"), 
         database = os.getenv("YDB_DATABASE"),
         credentials = ydb.iam.ServiceAccountCredentials.from_file(os.getenv("SA_KEY_FILE")) if os.getenv("LAMBDA_RUNTIME_DIR") is None else None
     )
-# Wait for the driver to become active for requests.
 driver.wait(timeout=15)
-# Create the session pool instance to manage YDB sessions.
 pool = ydb.SessionPool(driver)
 
+
+
+### Main handler
 def handler(event, context):
     request_body_dict = json.loads(event['body'])
     if 'message' not in request_body_dict: return
@@ -37,42 +35,72 @@ def handler(event, context):
         'statusCode': 200,
     }
 
+
+
 ### Telegram commands
 # /pepper
 @bot.message_handler(commands=['pepper'])
 def send_pepper(message):
     pepper = get_pepper(chat_id=message.chat.id, user_id=message.from_user.id)
-    if pepper:
+    if pepper: # checking if we found pepper
+        # if pepper exists
         now = datetime.now()
         start_of_day = datetime.timestamp(datetime(now.year,now.month,now.day))
-        if pepper.last_updated < start_of_day:
-            grow_by = grow_pepper()
-            new_size = pepper.size + grow_by
-            update_pepper_size(pepper_id=pepper.pepper_id, size=new_size)
-            send_message(message, "Pepper updated by <b>{0}</b>. It's <b>{1} cm</b> now".format(grow_by, new_size), disable_notification=False)
+        if pepper.last_updated < start_of_day: # checking if updated today
+            # pepper hasn't updated yet
+            grow_size = grow_pepper()
+            new_size = pepper.size + grow_size 
+            updated_pepper = update_pepper_size(
+                chat_id=message.chat.id, 
+                user_id=message.from_user.id, 
+                size=new_size
+            )
+            if updated_pepper:
+                msg = create_pepper_message(
+                    username=message.from_user.username,
+                    grow_size=grow_size,
+                    place=updated_pepper.place,
+                    size=updated_pepper.size
+                )
+                send_message(message, msg)
         else:
-            send_message(message, "Pepper has already updated today. It's <b>{0} cm</b>".format(pepper.size))
+            # pepper already updated
+            msg = create_pepper_message(
+                username=message.from_user.username, 
+                is_repeat=True,
+                place=pepper.place,
+                size=pepper.size
+            )
+            send_message(message, msg)
     else:
-        grow_by = grow_pepper()
-        create_pepper(
+        # if no pepper found, creating new one
+        grow_size = grow_pepper()
+        new_pepper = create_pepper(
             chat_id=message.chat.id, 
             user_id=message.from_user.id,
             username=message.from_user.username,
-            size=grow_by
+            size=grow_size
         )
-        send_message(message, "Pepper created. It's <b>{0} cm</b> now".format(grow_by))
+        if new_pepper:
+            msg = create_pepper_message(
+                username=message.from_user.username,
+                grow_size=grow_size,
+                place=new_pepper.place,
+                size=new_pepper.size
+            )
+            send_message(message, msg)
 
 # /top_peppers
 @bot.message_handler(commands=['top_peppers'])
 def send_top_peppers(message):
     top_peppers = get_top_peppers(chat_id = message.chat.id)
     if top_peppers:
-        text = "Top 10 peppers:\n"
+        text = "Топ 10 перчиков:\n"
         for index, pepper in enumerate(top_peppers, start=1):
-            text += "\n{0}| <b>{1}</b> — <b>{2} cm</b>".format(index, pepper.username, pepper.size)
+            text += "\n{0}| <b>{1}</b> — <b>{2} см</b>".format(index, pepper.username, pepper.size)
         send_message(message, text)
     else:
-        send_message(message, "No peppers found")
+        send_message(message, "Перчики не найдены в этом чате. Введите /pepper")
     
 # /pepper_of_the_day
 @bot.message_handler(commands=['pepper_of_the_day'])
@@ -87,36 +115,40 @@ def send_pepper_of_the_day(message):
             # if pepper_of_the_day hasn't updated yet
             random_pepper = get_random_pepper(message.chat.id)
             update_pepper_of_the_day(message.chat.id, random_pepper.user_id)
-            send_message(message, "New top pepper is <b>@{0}</b>".format(random_pepper.username), disable_notification=False)
+            send_message(message, "<b>@{0}</b>, поздравляю! У тебя сегодня самый лучший перчик!".format(random_pepper.username), disable_notification=False)
         else:
             # if pepper already updated today
             current_pepper_of_the_day = get_pepper(message.chat.id, pepper_of_the_day.user_id)
             if current_pepper_of_the_day:
                  # if got current_pepper_of_the_day
-                send_message(message, "Top pepper has already updated today. It's <b>{0}</b>".format(current_pepper_of_the_day.username))
+                send_message(message, "По результатам сегодняшнего розыгрыша лучший перчик у <b>{0}</b>!".format(current_pepper_of_the_day.username))
             else:
                 # if no current_pepper_of_the_day found
-                send_message(message, "No pepper found in this chat")
+                send_message(message, "Перчики не найдены в этом чате. Введите /pepper")
     else:
         # if no pepper_of_the_day found in table
         random_pepper = get_random_pepper(message.chat.id)
         if random_pepper:
             # if got random pepper
             create_pepper_of_the_day(message.chat.id, random_pepper.user_id)
-            send_message(message, "Top pepper of the day is <b>{}</b>".format(random_pepper.username))
+            send_message(message, "<b>@{0}</b>, поздравляю! У тебя сегодня самый лучший перчик!".format(random_pepper.username))
         else:
             # if no pepper found
-            send_message(message, "No peppers in this chat")
+            send_message(message, "Перчики не найдены в этом чате. Введите /pepper")
 
 
-# Yandex Database Operations
+
+### Yandex Database Operations
 def get_pepper(chat_id, user_id):
     def callee(session):
         result_sets = session.transaction().execute(
             """
             SELECT *
-            FROM peppers
-            WHERE chat_id = {0} AND user_id = {1};
+            FROM (SELECT ROW_NUMBER() OVER w AS place, peppers.*
+                FROM `peppers`
+                WHERE chat_id = {0}
+                WINDOW w AS (ORDER BY size DESC))
+            WHERE user_id = {1};
             """.format(chat_id, user_id),
             commit_tx=True,
             settings=ydb.BaseRequestSettings().with_timeout(3).with_operation_timeout(2)
@@ -140,20 +172,52 @@ def create_pepper(chat_id, user_id, username, size):
             commit_tx=True,
             settings=ydb.BaseRequestSettings().with_timeout(3).with_operation_timeout(2)
         )
+        result_sets = session.transaction().execute(
+            """
+            SELECT *
+            FROM (SELECT ROW_NUMBER() OVER w AS place, peppers.*
+                FROM `peppers`
+                WHERE chat_id = {0}
+                WINDOW w AS (ORDER BY size DESC))
+            WHERE user_id = {1};
+            """.format(chat_id, user_id),
+            commit_tx=True,
+            settings=ydb.BaseRequestSettings().with_timeout(3).with_operation_timeout(2)
+        )
+        if result_sets[0].rows:
+            return result_sets[0].rows[0]
+        else:
+            return False
     return pool.retry_operation_sync(callee)
 
-def update_pepper_size(pepper_id, size):
+def update_pepper_size(chat_id, user_id, size):
     last_updated = int(datetime.timestamp(datetime.now()))
     def callee(session):
         session.transaction().execute(
             """
             UPDATE `peppers`
             SET size = {0}, last_updated = {1}
-            WHERE pepper_id = "{2}";
-            """.format(size, last_updated, pepper_id),
+            WHERE chat_id = {2} AND user_id = {3};
+            """.format(size, last_updated, chat_id, user_id),
             commit_tx=True,
             settings=ydb.BaseRequestSettings().with_timeout(3).with_operation_timeout(2)
         )
+        result_sets = session.transaction().execute(
+            """
+            SELECT *
+            FROM (SELECT ROW_NUMBER() OVER w AS place, peppers.*
+                FROM `peppers`
+                WHERE chat_id = {0}
+                WINDOW w AS (ORDER BY size DESC))
+            WHERE chat_id = {1} AND user_id = {2};
+            """.format(chat_id, chat_id, user_id),
+            commit_tx=True,
+            settings=ydb.BaseRequestSettings().with_timeout(3).with_operation_timeout(2)
+        )
+        if result_sets[0].rows:
+            return result_sets[0].rows[0]
+        else:
+            return False
     return pool.retry_operation_sync(callee)
 
 def get_random_pepper(chat_id):
@@ -241,12 +305,28 @@ def update_pepper_of_the_day(chat_id, user_id):
         )
     return pool.retry_operation_sync(callee)
 
-# Utils
+### Utils
 def grow_pepper():
-    return randrange(-3, 20)
+    return randrange(0, 10)
+
 def send_message(message, text, disable_notification=True):
     bot.send_message(chat_id=message.chat.id, text=text, parse_mode="HTML", disable_notification=disable_notification)
 
+def create_pepper_message(username, size, place, grow_size=0, is_repeat=False):
+    first_line = """@{}, твой перчик """.format(username)
+    if is_repeat:
+        first_line = """@{}, ты уже измерял перчик сегодня.\n""".format(username)
+    else:
+        if grow_size > 0:
+            first_line += "вырос на <b>{} см</b>.\n".format(grow_size)
+        elif grow_size == 0:
+            first_line += "не изменился.\n"
+        else:
+            first_line += "уменьшился на <b>{} см</b>.\n".format(abs(grow_size))
+    second_line = """{0} он равен <b>{1} см</b>.\n""".format("Сейчас" if is_repeat else "Теперь", size)
+    third_line = """Ты занимаешь <b>{} место</b> в топе.\n""".format(place)
+    fourth_line = """Следующая попытка завтра!"""
+    return first_line + second_line + third_line + fourth_line
 
 
 if os.getenv("LAMBDA_RUNTIME_DIR") is None:
