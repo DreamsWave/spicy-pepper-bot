@@ -41,24 +41,18 @@ def handler(event, context):
 # /pepper
 @bot.message_handler(commands=['pepper'])
 def send_pepper(message):
-    print('pepper command')
     pepper = get_pepper(chat_id=message.chat.id, user_id=message.from_user.id)
     if pepper:
-        print(pepper)
         now = datetime.now()
         start_of_day = datetime.timestamp(datetime(now.year,now.month,now.day))
         if pepper.last_updated < start_of_day:
-            print("Pepper hasn't updated yet")
             grow_by = grow_pepper()
             new_size = pepper.size + grow_by
             update_pepper_size(pepper_id=pepper.pepper_id, size=new_size)
-            print("Pepper updated by {0}. It's {1} now".format(grow_by, new_size))
-            send_message(message, "Pepper updated by {0}. It's {1} now".format(grow_by, new_size))
+            send_message(message, "Pepper updated by {0}. It's {1} now".format(grow_by, new_size), disable_notification=False)
         else:
-            print("Pepper already updated today. It's {0}".format(pepper.size))
             send_message(message, "Pepper has already updated today. It's {0}".format(pepper.size))
     else:
-        print('No pepper found')
         grow_by = grow_pepper()
         create_pepper(
             chat_id=message.chat.id, 
@@ -66,47 +60,40 @@ def send_pepper(message):
             username=message.from_user.username,
             size=grow_by
         )
-        print("Pepper created. It's {0} now".format(grow_by))
         send_message(message, "Pepper created. It's {0} now".format(grow_by))
 
 # /top_peppers
 @bot.message_handler(commands=['top_peppers'])
 def send_top_peppers(message):
-    print('top_peppers command')
     top_peppers = get_top_peppers(chat_id = message.chat.id)
-    print(top_peppers)
     if top_peppers:
-        print('Peppers found')
         text = "Top 10 peppers:\n"
         for index, pepper in enumerate(top_peppers, start=1):
             text += "\n{0}| <b>{1}</b> — <b>{2}</b> cm".format(index, pepper.username, pepper.size)
         send_message(message, text)
     else:
-        print('No peppers found')
         send_message(message, "No peppers found")
     
 # /pepper_of_the_day
 @bot.message_handler(commands=['pepper_of_the_day'])
 def send_pepper_of_the_day(message):
-    print('pepper_of_the_day command')
     pepper_of_the_day = get_pepper_of_the_day(message.chat.id)
 
     if pepper_of_the_day:
         # if found pepper_of_the_day in table
-        print(pepper_of_the_day)
         now = datetime.now()
         start_of_day = datetime.timestamp(datetime(now.year,now.month,now.day))
         if pepper_of_the_day.last_updated < start_of_day:
             # if pepper_of_the_day hasn't updated yet
             random_pepper = get_random_pepper(message.chat.id)
             update_pepper_of_the_day(message.chat.id, random_pepper.user_id)
-            send_message(message, "New top pepper is {0}".format(random_pepper.username))
+            send_message(message, "New top pepper is <b>@{0}</b>".format(random_pepper.username), disable_notification=False)
         else:
             # if pepper already updated today
             current_pepper_of_the_day = get_pepper(message.chat.id, pepper_of_the_day.user_id)
             if current_pepper_of_the_day:
                  # if got current_pepper_of_the_day
-                send_message(message, "Top pepper has already updated today. It's <b>{0}</b>".format(current_pepper_of_the_day.username))
+                send_message(message, "Top pepper has already updated today. It's {0}".format(current_pepper_of_the_day.username))
             else:
                 # if no current_pepper_of_the_day found
                 send_message(message, "No peppers in this chat")
@@ -157,7 +144,6 @@ def create_pepper(chat_id, user_id, username, size):
 
 def update_pepper_size(pepper_id, size):
     last_updated = int(datetime.timestamp(datetime.now()))
-    print(pepper_id, size, last_updated)
     def callee(session):
         session.transaction().execute(
             """
@@ -176,7 +162,7 @@ def get_random_pepper(chat_id):
             """
             SELECT * 
             FROM `peppers` 
-            WHERE chat_id == {} 
+            WHERE chat_id = {} 
             ORDER BY RANDOM(pepper_id) 
             LIMIT 1
             """.format(chat_id),
@@ -196,7 +182,7 @@ def get_top_peppers(chat_id):
             """
             SELECT *
             FROM `peppers`
-            WHERE chat_id == {}
+            WHERE chat_id = {}
             ORDER BY size DESC
             LIMIT 10
             """.format(chat_id),
@@ -248,7 +234,7 @@ def update_pepper_of_the_day(chat_id, user_id):
             """
             UPDATE `peppers_of_the_day`
             SET user_id = {0}, last_updated = {1}
-            WHERE chat_id = "{2}";
+            WHERE chat_id = {2};
             """.format(user_id, last_updated, chat_id),
             commit_tx=True,
             settings=ydb.BaseRequestSettings().with_timeout(3).with_operation_timeout(2)
@@ -258,8 +244,8 @@ def update_pepper_of_the_day(chat_id, user_id):
 # Utils
 def grow_pepper():
     return randrange(-3, 20)
-def send_message(message, text):
-    bot.send_message(chat_id=message.chat.id, text=text, parse_mode="HTML")
+def send_message(message, text, disable_notification=True):
+    bot.send_message(chat_id=message.chat.id, text=text, parse_mode="HTML", disable_notification=disable_notification)
 
 
 
