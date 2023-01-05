@@ -142,6 +142,7 @@ def send_pepper_of_the_day(message):
 def send_ask(message):
     unique_code = extract_unique_code(message.text)
     if unique_code:
+        print("вопрос: " + unique_code)
         openai.api_key = os.getenv("OPENAI_API_KEY")
         response = openai.Completion.create(
             model="text-davinci-003",
@@ -149,7 +150,8 @@ def send_ask(message):
             temperature=0.6,
             max_tokens=3000,
         )
-        result = response.choices[0].text
+        result = response.choices[0].text.strip()
+        print("ответ: " + result)
         send_message(message, result)
 
 
