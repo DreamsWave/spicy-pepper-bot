@@ -4,3 +4,4 @@ ydb
 ydb[yc]
 pyTelegramBotAPI
 python-dotenv
+openai
