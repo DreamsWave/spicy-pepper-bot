@@ -8,6 +8,7 @@ from datetime import datetime
 from random import randrange
 import uuid
 from dotenv import load_dotenv
+import openai
 
 # init
 load_dotenv()
@@ -136,6 +137,20 @@ def send_pepper_of_the_day(message):
             # if no pepper found
             send_message(message, "Перчики не найдены в этом чате. Введите /pepper")
 
+# /ask
+@bot.message_handler(commands=['ask'])
+def send_ask(message):
+    unique_code = extract_unique_code(message.text)
+    if unique_code:
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        response = openai.Completion.create(
+            model="text-davinci-003",
+            prompt=unique_code,
+            temperature=0.6,
+            max_tokens=3000,
+        )
+        result = response.choices[0].text
+        send_message(message, result)
 
 
 ### Yandex Database Operations
@@ -328,6 +343,8 @@ def create_pepper_message(username, size, place, grow_size=0, is_repeat=False):
     fourth_line = """Следующая попытка завтра!"""
     return first_line + second_line + third_line + fourth_line
 
+def extract_unique_code(text):
+    return ' '.join(text.split()[1:]) if len(text.split()) > 1 else None
 
 if os.getenv("LAMBDA_RUNTIME_DIR") is None:
     from faker import event, context
