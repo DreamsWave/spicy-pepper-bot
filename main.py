@@ -27,9 +27,8 @@ pool = ydb.SessionPool(driver)
 
 ### Main handler
 def handler(event, context):
+    print(event)
     request_body_dict = json.loads(event['body'])
-    if 'message' not in request_body_dict: return
-    
     update = telebot.types.Update.de_json(request_body_dict)
     bot.process_new_updates([update])
     return {
@@ -49,8 +48,9 @@ def send_pepper(message):
         start_of_day = datetime.timestamp(datetime(now.year,now.month,now.day))
         if pepper.last_updated < start_of_day: # checking if updated today
             # pepper hasn't updated yet
-            grow_size = grow_pepper()
-            new_size = pepper.size + grow_size 
+            grow = grow_pepper()
+            grow_size = grow["bonus"]["size"] if grow["bonus"] else grow["size"]
+            new_size = pepper.size + grow_size
             updated_pepper = update_pepper_size(
                 chat_id=message.chat.id, 
                 user_id=message.from_user.id, 
@@ -59,9 +59,10 @@ def send_pepper(message):
             if updated_pepper:
                 msg = create_pepper_message(
                     username=message.from_user.username,
-                    grow_size=grow_size,
+                    grow_size=grow["size"],
                     place=updated_pepper.place,
-                    size=updated_pepper.size
+                    size=updated_pepper.size,
+                    bonus=grow["bonus"]
                 )
                 send_message(message, msg)
         else:
@@ -75,7 +76,12 @@ def send_pepper(message):
             send_message(message, msg)
     else:
         # if no pepper found, creating new one
-        grow_size = grow_pepper()
+        grow = grow_pepper()
+        grow_size = 0
+        if grow["bonus"] == None:
+            grow_size = grow["size"]
+        else:
+            grow_size = grow["bonus"]["size"]
         new_pepper = create_pepper(
             chat_id=message.chat.id, 
             user_id=message.from_user.id,
@@ -85,9 +91,10 @@ def send_pepper(message):
         if new_pepper:
             msg = create_pepper_message(
                 username=message.from_user.username,
-                grow_size=grow_size,
+                grow_size=grow["size"],
                 place=new_pepper.place,
-                size=new_pepper.size
+                size=new_pepper.size,
+                bonus=grow["bonus"]
             )
             send_message(message, msg)
 
@@ -324,18 +331,45 @@ def update_pepper_of_the_day(chat_id, user_id):
 
 ### Utils
 def grow_pepper():
-    return randrange(0, 10)
+    grow = {
+        "size": 0,
+        "bonus": None
+    }
+
+    # get pepper grow size
+    grow_size = randrange(0, 10)
+    grow["size"] = grow_size
+
+    # handling bonuses
+    random_number = randrange(0, 10)
+    if random_number >= 0 and random_number <= 2:
+        grow["bonus"] = {
+            "type": "double_increase",
+            "size": round(grow_size * 2)
+        } 
+    elif random_number > 2 and random_number <= 5:
+        grow["bonus"] = {
+            "type": "double_decrease",
+            "size": round(grow_size / 2)
+        } 
+    print(grow)
+    return grow
 
 def send_message(message, text, disable_notification=True):
     bot.send_message(chat_id=message.chat.id, text=text, parse_mode="HTML", disable_notification=disable_notification)
 
-def create_pepper_message(username, size, place, grow_size=0, is_repeat=False):
+def create_pepper_message(username, size, place, grow_size=0, is_repeat=False, bonus=None):
     first_line = """@{}, твой перчик """.format(username)
     if is_repeat:
         first_line = """@{}, ты уже измерял перчик сегодня.\n""".format(username)
     else:
         if grow_size > 0:
             first_line += "вырос на <b>{} см</b>.\n".format(grow_size)
+            if bonus:
+                if bonus["type"] == "double_increase":
+                    first_line += "🍀 А еще ты получаешь бонус с двойным ростом и твой перчик сегодня вырастает на <b>{} см</b>!\n".format(bonus["size"])
+                if bonus["type"] == "double_decrease":
+                    first_line += "🗿 А еще тебе не повезло и рост твоего перчика сегодня уменьшается вдвое до <b>{} см</b>.\n".format(bonus["size"])
         elif grow_size == 0:
             first_line += "не изменился.\n"
         else:
