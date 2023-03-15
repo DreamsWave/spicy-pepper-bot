@@ -148,19 +148,29 @@ def send_pepper_of_the_day(message):
 @bot.message_handler(commands=['ask'])
 def send_ask(message):
     unique_code = extract_unique_code(message.text)
-    if unique_code:
-        print("вопрос: " + unique_code)
-        openai.api_key = os.getenv("OPENAI_API_KEY")
-        response = openai.Completion.create(
-            model="text-davinci-003",
-            prompt=unique_code,
-            temperature=0.6,
-            max_tokens=3000,
-        )
-        result = response.choices[0].text.strip()
-        print("ответ: " + result)
-        send_message(message, result)
+    
+    if not unique_code: 
+        print("You should pass args")
+        return send_message(message, "You should pass args")
+    if not len(unique_code) > 2000: 
+        print("The message is too long: " + str(len(unique_code)))
+        return send_message(message, "Max message is 2000, but your message is too long: " + str(len(unique_code)))
 
+    print("вопрос: " + unique_code)
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+    response = openai.Completion.create(
+        model="text-davinci-003",
+        prompt=unique_code,
+        temperature=0.6,
+        max_tokens=2000,
+    )
+    result = response.choices[0].text.strip()
+    print("ответ: " + result)
+    if result:
+        send_message(message, result)
+    else:
+        send_message(message, "No response")
+        
 
 ### Yandex Database Operations
 def get_pepper(chat_id, user_id):
