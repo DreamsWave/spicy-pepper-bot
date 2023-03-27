@@ -9,6 +9,7 @@ from random import randrange
 import uuid
 from dotenv import load_dotenv
 import openai
+import math
 
 # init
 load_dotenv()
@@ -20,13 +21,12 @@ bot = telebot.TeleBot(os.getenv('TELEGRAM_TOKEN'), threaded=False, parse_mode="H
 driver = ydb.Driver(
   endpoint=os.getenv('YDB_ENDPOINT'),
   database=os.getenv('YDB_DATABASE'),
-  credentials=ydb.iam.MetadataUrlCredentials(),
+  credentials= ydb.iam.ServiceAccountCredentials.from_file(os.getenv("SA_KEY_FILE")) if os.getenv("LAMBDA_RUNTIME_DIR") is None else ydb.iam.MetadataUrlCredentials(),
 )
 # Wait for the driver to become active for requests.
 driver.wait(fail_fast=True, timeout=5)
 # Create the session pool instance to manage YDB sessions.
 pool = ydb.SessionPool(driver)
-
 
 ### Main handler
 def handler(event, context):
@@ -49,7 +49,7 @@ def send_pepper(message):
         start_of_day = datetime.timestamp(datetime(now.year,now.month,now.day))
         if pepper.last_updated < start_of_day: # checking if updated today
             # pepper hasn't updated yet
-            grow = grow_pepper()
+            grow = grow_pepper(chat_id=message.chat.id, user_id=message.from_user.id)
             grow_size = grow["bonus"]["size"] if grow["bonus"] else grow["size"]
             new_size = pepper.size + grow_size
             updated_pepper = update_pepper_size(
@@ -77,7 +77,7 @@ def send_pepper(message):
             send_message(message, msg)
     else:
         # if no pepper found, creating new one
-        grow = grow_pepper()
+        grow = grow_pepper(chat_id=message.chat.id, user_id=message.from_user.id)
         grow_size = 0
         if grow["bonus"] == None:
             grow_size = grow["size"]
@@ -341,14 +341,14 @@ def update_pepper_of_the_day(chat_id, user_id):
     return pool.retry_operation_sync(callee)
 
 ### Utils
-def grow_pepper():
+def grow_pepper(chat_id, user_id):
     grow = {
         "size": 0,
         "bonus": None
     }
 
     # get pepper grow size
-    grow_size = randrange(0, 10)
+    grow_size = randrange(5, 10)
     grow["size"] = grow_size
 
     # handling bonuses
@@ -358,12 +358,13 @@ def grow_pepper():
             "type": "double_increase",
             "size": round(grow_size * 2)
         } 
-    elif random_number > 2 and random_number <= 5:
+    top_peppers = get_top_peppers(chat_id)
+    if top_peppers and top_peppers[0].user_id == user_id:
         grow["bonus"] = {
-            "type": "double_decrease",
-            "size": round(grow_size / 2)
-        } 
-    print(grow)
+            "type": "curse_of_the_first",
+            "size": math.ceil(grow_size / 2)
+        }
+        
     return grow
 
 def send_message(message, text, disable_notification=True):
@@ -379,8 +380,8 @@ def create_pepper_message(username, size, place, grow_size=0, is_repeat=False, b
             if bonus:
                 if bonus["type"] == "double_increase":
                     first_line += "🍀 А еще ты получаешь бонус с двойным ростом и твой перчик сегодня вырастает на <b>{} см</b>!\n".format(bonus["size"])
-                if bonus["type"] == "double_decrease":
-                    first_line += "🗿 А еще тебе не повезло и рост твоего перчика сегодня уменьшается вдвое до <b>{} см</b>.\n".format(bonus["size"])
+                if bonus["type"] == "curse_of_the_first":
+                    first_line += "👑 Но из-за \"Проклятия первого\" рост твоего перчика сегодня уменьшается вдвое до <b>{} см</b>.\n".format(bonus["size"])
         elif grow_size == 0:
             first_line += "не изменился.\n"
         else:
