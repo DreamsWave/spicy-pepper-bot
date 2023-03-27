@@ -12,12 +12,16 @@ load_dotenv()
 logger = telebot.logger
 telebot.logger.setLevel(logging.INFO)
 bot = telebot.TeleBot(os.getenv('TELEGRAM_TOKEN'), threaded=False, parse_mode="HTML")
+
+# Create driver in global space.
 driver = ydb.Driver(
-        endpoint = os.getenv("YDB_ENDPOINT"), 
-        database = os.getenv("YDB_DATABASE"),
-        credentials = ydb.iam.ServiceAccountCredentials.from_file(os.getenv("SA_KEY_FILE")) if os.getenv("LAMBDA_RUNTIME_DIR") is None else None
-    )
-driver.wait(timeout=15)
+  endpoint=os.getenv('YDB_ENDPOINT'),
+  database=os.getenv('YDB_DATABASE'),
+  credentials=ydb.iam.MetadataUrlCredentials(),
+)
+# Wait for the driver to become active for requests.
+driver.wait(fail_fast=True, timeout=5)
+# Create the session pool instance to manage YDB sessions.
 pool = ydb.SessionPool(driver)
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
