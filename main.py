@@ -15,14 +15,17 @@ load_dotenv()
 logger = telebot.logger
 telebot.logger.setLevel(logging.INFO)
 bot = telebot.TeleBot(os.getenv('TELEGRAM_TOKEN'), threaded=False, parse_mode="HTML")
-driver = ydb.Driver(
-        endpoint = os.getenv("YDB_ENDPOINT"), 
-        database = os.getenv("YDB_DATABASE"),
-        credentials = ydb.iam.ServiceAccountCredentials.from_file(os.getenv("SA_KEY_FILE")) if os.getenv("LAMBDA_RUNTIME_DIR") is None else None
-    )
-driver.wait(timeout=15)
-pool = ydb.SessionPool(driver)
 
+# Create driver in global space.
+driver = ydb.Driver(
+  endpoint=os.getenv('YDB_ENDPOINT'),
+  database=os.getenv('YDB_DATABASE'),
+  credentials=ydb.iam.MetadataUrlCredentials(),
+)
+# Wait for the driver to become active for requests.
+driver.wait(fail_fast=True, timeout=5)
+# Create the session pool instance to manage YDB sessions.
+pool = ydb.SessionPool(driver)
 
 
 ### Main handler
@@ -34,8 +37,6 @@ def handler(event, context):
     return {
         'statusCode': 200,
     }
-
-
 
 ### Telegram commands
 # /pepper
@@ -152,7 +153,7 @@ def send_ask(message):
     if not unique_code: 
         print("You should pass args")
         return send_message(message, "You should pass args")
-    if not len(unique_code) > 2000: 
+    if len(unique_code) > 2000: 
         print("The message is too long: " + str(len(unique_code)))
         return send_message(message, "Max message is 2000, but your message is too long: " + str(len(unique_code)))
 
