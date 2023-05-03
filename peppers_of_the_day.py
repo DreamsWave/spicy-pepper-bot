@@ -5,47 +5,40 @@ import ydb
 import ydb.iam
 from datetime import datetime
 from dotenv import load_dotenv
-import openai
 
 # init
 load_dotenv()
 logger = telebot.logger
 telebot.logger.setLevel(logging.INFO)
-bot = telebot.TeleBot(os.getenv('TELEGRAM_TOKEN'), threaded=False, parse_mode="HTML")
+bot = telebot.TeleBot(os.getenv('TELEGRAM_TOKEN'),
+                      threaded=False, parse_mode="HTML")
 
 # Create driver in global space.
 driver = ydb.Driver(
-  endpoint=os.getenv('YDB_ENDPOINT'),
-  database=os.getenv('YDB_DATABASE'),
-  credentials=ydb.iam.MetadataUrlCredentials(),
+    endpoint=os.getenv('YDB_ENDPOINT'),
+    database=os.getenv('YDB_DATABASE'),
+    credentials=ydb.iam.MetadataUrlCredentials(),
 )
 # Wait for the driver to become active for requests.
 driver.wait(fail_fast=True, timeout=5)
 # Create the session pool instance to manage YDB sessions.
 pool = ydb.SessionPool(driver)
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
-### Main handler
 def handler(event, context):
+    # Main handler
     peppers_of_the_day = get_peppers_of_the_day()
     if peppers_of_the_day:
-        random_fact = get_random_fact()
         for pepper_of_the_day in peppers_of_the_day:
             random_pepper = get_random_pepper(pepper_of_the_day.chat_id)
-            update_pepper_of_the_day(random_pepper.chat_id, random_pepper.user_id)
+            update_pepper_of_the_day(
+                random_pepper.chat_id, random_pepper.user_id)
 
             bot.send_message(
-                chat_id=pepper_of_the_day.chat_id, 
-                text="<b>@{0}</b>, поздравляю! У тебя сегодня самый лучший перчик!".format(random_pepper.username), 
-                parse_mode="HTML", 
-                disable_notification=True
-            )
-            
-            bot.send_message(
-                chat_id=pepper_of_the_day.chat_id, 
-                text="Рандомный факт дня:\n{}".format(random_fact), 
-                parse_mode="HTML", 
+                chat_id=pepper_of_the_day.chat_id,
+                text="<b>@{0}</b>, поздравляю! У тебя сегодня самый лучший перчик!".format(
+                    random_pepper.username),
+                parse_mode="HTML",
                 disable_notification=True
             )
 
@@ -53,8 +46,9 @@ def handler(event, context):
         'statusCode': 200,
     }
 
+# Yandex Database Operations
 
-### Yandex Database Operations
+
 def get_random_pepper(chat_id):
     def callee(session):
         result_sets = session.transaction().execute(
@@ -75,8 +69,10 @@ def get_random_pepper(chat_id):
 
     return pool.retry_operation_sync(callee)
 
+
 def update_pepper_of_the_day(chat_id, user_id):
     last_updated = int(datetime.timestamp(datetime.now()))
+
     def callee(session):
         session.transaction().execute(
             """
@@ -88,6 +84,7 @@ def update_pepper_of_the_day(chat_id, user_id):
             settings=ydb.BaseRequestSettings().with_timeout(3).with_operation_timeout(2)
         )
     return pool.retry_operation_sync(callee)
+
 
 def get_peppers_of_the_day():
     def callee(session):
@@ -106,16 +103,6 @@ def get_peppers_of_the_day():
 
     return pool.retry_operation_sync(callee)
 
-def get_random_fact():
-    response = openai.Completion.create(
-        model="text-davinci-003",
-        prompt="Расскажи рандомный факт о компьютерных играх",
-        temperature=0.6,
-        max_tokens=3000,
-    )
-    random_fact = response.choices[0].text.strip()
-    print("факт: " + random_fact)
-    return random_fact
 
 if os.getenv("LAMBDA_RUNTIME_DIR") is None:
     from faker import event, context
