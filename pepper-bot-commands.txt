@@ -1,3 +1,4 @@
 pepper - Увеличить перчик
 top_peppers - Топ 10 перчиков
 pepper_of_the_day - Перчик дня
+ball - Magic 8 ball

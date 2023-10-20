@@ -169,6 +169,38 @@ def send_pepper_of_the_day(message):
             send_message(message, "Перчики не найдены в этом чате. Введите /pepper")
 
 
+# /ball
+@bot.message_handler(commands=["ball"])
+def send_ball_response(message):
+    ball_responses = [
+        "Бесспорно",
+        "Предрешено",
+        "Никаких сомнений",
+        "Определённо да",
+        "Можешь быть уверен в этом",
+        "Мне кажется — «да»",
+        "Вероятнее всего",
+        "Хорошие перспективы",
+        "Знаки говорят — «да»",
+        "Пока не ясно, попробуй снова",
+        "Спроси позже",
+        "Лучше не рассказывать",
+        "Сейчас нельзя предсказать",
+        "Сконцентрируйся и спроси опять",
+        "Даже не думай",
+        "Мой ответ — «нет»",
+        "По моим данным — «нет»",
+        "Перспективы не очень хорошие",
+        "Весьма сомнительно",
+    ]
+    ball_response = ball_responses[randrange(0, len(ball_responses))]
+    send_message(
+        message,
+        ball_response,
+        disable_notification=False,
+    )
+
+
 # Yandex Database Operations
 def get_pepper(chat_id, user_id):
     def callee(session):
